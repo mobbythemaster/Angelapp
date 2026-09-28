@@ -722,6 +722,7 @@ form.spotform input,form.spotform select,form.spotform textarea{width:100%;paddi
     <button class="btn" id="btnHere" type="button">Spot hier speichern</button>
     <button class="btn" id="btnAdd" type="button">Spot setzen</button>
     <button class="btn" id="btnList" type="button">Spots (<span id="count">0</span>)</button>
+    <button class="btn" id="btnStruct" type="button">Buhnen &amp; Zugänge</button>
     <div class="depth"><label for="opacity">Tiefenkarte</label><input id="opacity" type="range" min="0" max="100" value="85" aria-label="Deckkraft der Tiefenkarte"></div>
   </div>
 </div>
@@ -902,6 +903,81 @@ form.spotform input,form.spotform select,form.spotform textarea{width:100%;paddi
     else { showHint('Erst "Standort" antippen, dann kann der Spot gespeichert werden.'); }
   };
   document.getElementById('btnList').onclick = function(){ if(panelMode==='list') closePanel(); else renderList(); };
+
+  // ---------- Buhnen, Parkplätze, Wasserzugänge (OpenStreetMap via Overpass) ----------
+  var structLayer = L.layerGroup().addTo(map);
+  var STRUCT_CACHE = 'donau-struktur-v1';
+  var OVERPASS_ENDPOINTS = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://lz4.overpass-api.de/api/interpreter'
+  ];
+  var btnStruct = document.getElementById('btnStruct');
+  var structLoaded = false;
+
+  function structIcon(kind){
+    var colors = {groyne:'#c9852a', parking:'#3b6fd6', access:'#1f9e6e'};
+    var glyphs = {groyne:'⟂', parking:'P', access:'≈'};
+    return L.divIcon({
+      className:'',
+      html:'<div style="width:22px;height:22px;border-radius:50%;background:'+colors[kind]+';border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;color:#fff;font:bold 12px/1 system-ui;">'+glyphs[kind]+'</div>',
+      iconSize:[22,22], iconAnchor:[11,11], popupAnchor:[0,-11]
+    });
+  }
+  function overpassQuery(bbox){
+    // bbox: south,west,north,east
+    return '[out:json][timeout:25];(' +
+      'node["man_made"="groyne"]('+bbox+');way["man_made"="groyne"]('+bbox+');' +
+      'node["amenity"="parking"]('+bbox+');way["amenity"="parking"]('+bbox+');' +
+      'node["leisure"="slipway"]('+bbox+');way["leisure"="slipway"]('+bbox+');' +
+      'node["natural"="beach"]('+bbox+');' +
+      ');out center;';
+  }
+  function cacheKey(bbox){ return STRUCT_CACHE+':'+bbox.split(',').map(function(n){return Math.round(parseFloat(n)*200)/200;}).join(','); }
+  function renderStruct(elements){
+    elements.forEach(function(el){
+      var lat = el.lat != null ? el.lat : (el.center && el.center.lat);
+      var lon = el.lon != null ? el.lon : (el.center && el.center.lon);
+      if(lat==null || lon==null) return;
+      var tags = el.tags || {};
+      var kind = tags.man_made==='groyne' ? 'groyne' : (tags.amenity==='parking' ? 'parking' : 'access');
+      var label = kind==='groyne' ? 'Buhne' : (kind==='parking' ? 'Parkplatz'+(tags.fee==='yes'?' (kostenpflichtig)':'') : (tags.leisure==='slipway' ? 'Bootsrampe' : 'Uferzugang'));
+      L.marker([lat,lon], {icon:structIcon(kind), title:label}).addTo(structLayer)
+        .bindPopup('<b>'+label+'</b>'+(tags.name?'<br>'+esc(tags.name):'')+
+          '<br><a href="https://www.google.com/maps/dir/?api=1&destination='+lat+','+lon+'" target="_blank" rel="noopener">Route dorthin</a>');
+    });
+  }
+  function fetchOverpass(endpoints, bbox, cb){
+    if(!endpoints.length){ cb(new Error('Alle Server nicht erreichbar')); return; }
+    var url = endpoints[0] + '?data=' + encodeURIComponent(overpassQuery(bbox));
+    fetch(url).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(data){ cb(null, data); })
+      .catch(function(){ fetchOverpass(endpoints.slice(1), bbox, cb); });
+  }
+  btnStruct.onclick = function(){
+    var b = map.getBounds();
+    var bbox = [b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].map(function(n){return n.toFixed(4);}).join(',');
+    var ck = cacheKey(bbox);
+    btnStruct.disabled = true;
+    var cached = null;
+    try{ cached = JSON.parse(localStorage.getItem(ck)||'null'); }catch(e){}
+    if(cached){
+      structLayer.clearLayers(); renderStruct(cached); structLoaded = true;
+      btnStruct.disabled = false; showHint(cached.length+' Buhnen/Zugänge (gespeichert) geladen.'); setTimeout(function(){showHint('');},3000);
+      return;
+    }
+    showHint('Lade Buhnen & Zugänge …');
+    fetchOverpass(OVERPASS_ENDPOINTS, bbox, function(err, data){
+      btnStruct.disabled = false;
+      if(err || !data){ showHint('Konnte OpenStreetMap-Daten nicht laden. Prüfe die Internetverbindung und versuch es nochmal.'); return; }
+      structLayer.clearLayers();
+      renderStruct(data.elements||[]);
+      structLoaded = true;
+      try{ localStorage.setItem(ck, JSON.stringify(data.elements||[])); }catch(e){}
+      showHint((data.elements||[]).length+' Buhnen/Zugänge geladen. Orange = Buhne, Blau = Parkplatz, Grün = Wasserzugang.');
+      setTimeout(function(){ if(!addMode) showHint(''); },5000);
+    });
+  };
 
   load(); renderAll(); updateZoomHint();
 })();
