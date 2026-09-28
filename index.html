@@ -744,8 +744,8 @@ form.spotform input,form.spotform select,form.spotform textarea{width:100%;paddi
   L.control.attribution({position:'topright', prefix:false}).addTo(map);
 
   // CARTO statt tile.openstreetmap.org: OSM blockiert Anfragen ohne Referer (z. B. lokal geöffnete Datei)
-  var osm = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    maxZoom:20, subdomains:'abcd', attribution:'&copy; OSM &copy; CARTO'
+  var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19, subdomains:'abc', attribution:'&copy; OSM'
   });
   var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom:19, attribution:'&copy; Esri'
